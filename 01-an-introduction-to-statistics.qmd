@@ -1,0 +1,1387 @@
+---
+title: Dyr og Data
+subtitle: "Introduction to statistics"
+format:
+  aarhus-revealjs:
+    embed-resources: true
+    code-line-numbers: false
+html-math-method:
+  method: mathjax
+  url: "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+author:
+  - name: Gavin Simpson
+    orcid: 0000-0002-9084-8413
+    email: gavin@anivet.au.dk
+    affiliations: Aarhus University
+  - name: Mona Larsen
+    email: mona@anivet.au.dk
+    affiliations: Aarhus University
+date: last-modified
+title-slide-attributes:
+  data-background-color: "#003d73"
+presenter:
+  name: Gavin Simpson
+  institute: Department of Animal & Veterinary Sciences
+knitr:
+  opts_chunk: 
+    echo: false
+    message: false
+    fig.align: center
+    fig.height: 5
+    fig.width: 9
+    dpi: 300
+    cache: true
+highlight-style: github-dark
+---
+
+```{r}
+#| echo: false
+#| label: setup
+#| cache: false
+library("ggplot2")
+library("patchwork")
+library("withr")
+library("infer")
+library("dplyr")
+library("palmerpenguins")
+library("marginaleffects")
+
+plt_labs <- labs(x = NULL, y = "Bill length(mm)")
+```
+
+
+## Introduction
+
+In science we collect data to test hypotheses
+
+We use statistics
+
+
+## Inference
+
+[Statistical inference]{.highlight} relates to using probabilities to make decisions about parameters of interest in a [population]{.highlight} from statistics (estimates) derived from a subset or [sample]{.highlight} from that population
+
+Are the population means of two groups, **control** & **treated**, different?
+
+Key concepts
+
+- test statistics & their distribution
+- null hypothesis testing
+- statistical significance
+- confidence intervals
+
+# Samples and populations
+
+## Samples and populations
+
+Interested in the efficacy of a new drug for treating disease in animals
+
+The population of interest is all the animals with the disease across herds in a sector
+
+We could recruit the farmers managing all the herds in the sector into a study, and give each animal either the new drug or a control
+
+Measure the recovery time of the two groups
+
+Problems are:
+
+- would be far too costly,
+- would be far too time consuming, and
+- we'd never recruit **every** herd into the study
+
+## Samples and populations
+
+An alternative approach is to [sample]{.highlight} from the population of interest
+
+Take a random, representative subset of animals (or herds) from the population of interest
+
+How *representative* the sample is depends on how it was collected
+
+## Sampling
+
+Many statistical methods assume that the data represent a [random sample]{.highlight} from a population
+
+Difficult to do in practice
+
+- need to identify every individual in the target population
+- some farmers or owners may refuse to be part of the study
+
+Alternatively we could [cluster sample]{.highlight} (random stratified sampling); select *n* representative herds and then randomly sample individuals from within those herds
+
+## Sampling error
+
+Statistics computed on samples will be rarely exactly equal to the population values
+
+```{r, hearing-data}
+set.seed(2)
+
+adelie_bills <- penguins |> 
+  filter(species == "Adelie" & !is.na(sex)) |>
+  group_by(sex) |>
+  slice_sample(n = 20) |>
+  ungroup()
+avg_male <- adelie_bills |>
+  filter(sex == "male") |>
+  summarise(avg_bill_length = mean(bill_length_mm)) |>
+  pull(avg_bill_length)
+sd_male <- adelie_bills |>
+  filter(sex == "male") |>
+  summarise(sd_bill_length = sd(bill_length_mm)) |>
+  pull(sd_bill_length)
+avg_female <- adelie_bills |>
+  filter(sex == "female") |>
+  summarise(avg_bill_length = mean(bill_length_mm)) |>
+  pull(avg_bill_length)
+
+adelie_crit_t <- qt((1 - 0.95) / 2, df = nrow(adelie_bills) / 2 - 1, lower.tail = FALSE)
+
+sem_male <- sd_male / sqrt(nrow(adelie_bills) / 2)
+```
+
+- A sample of 20 male and 20 female penguins
+- Mean bill length in male Adelie = `{r} avg_male |> round(2)`
+- Mean bill length in female Adelie = `{r} avg_female |> round(2)`
+
+Is there evidence of sexual dimorphism in *Adelie* penguin bill lengths?
+
+## Samples and populations
+
+A distinction is often made between [parameters]{.highlight} and [statistics]{.highlight}
+
+- Parameters relate to the population: population mean
+- Statistics refer to the sample: sample mean
+
+A sample statistic is an [estimates]{.highlight} of a population parameter
+
+Interchange between statistics and parameter estimates
+
+## Probability
+
+[Probabilities]{.highlight} describe the *chance* that an event will occur
+
+Probabilities range from 0 to 1, with smaller values indicating the occurrence unlikely and larger values indicating occurrence is likely
+
+Compute probabilities as $\displaystyle \frac{m}{M}$; $m$ is the number of possible outcomes of interest $M$ is the number of all possible outcomes
+
+Probability of a head on a single coin toss: $\frac{1}{2} = 0.5$
+
+Probability of rolling an odd number on a 10-side die: $\frac{5}{10} = 0.5$
+
+Probability of rolling a value less than 3 on a 10-sided die: $\frac{2}{10} = 0.2$
+
+## Probability
+
+What is the probability of randomly selecting two samples with means as different as observed if the samples came from the same population?
+
+Need to consider the **sampling error**:
+
+- samples drawn from populations with **same** mean, any difference is due to sampling error
+- samples drawn from populations with **different** means; difference is due to a real population difference
+
+## Probability
+
+Earlier we saw a difference of means of the bill lengths of male and female *Adelie* penguins of `{r} round(avg_male - avg_female, 2)`
+
+- Assume that there is **no difference** between male and female *Adelie* penguin's bill lengths
+- Under this assumption we can say $\mu_{\text{male}} = \mu_{\text{female}}$
+- Using computer we can see how likely a result the observed difference is:
+    1. draw at random two samples of 20 values each from a population with mean = `{r} round(avg_male, 2)`, the male mean bill length, (& same variance)
+    2. record the difference in means of these two samples
+- repeat 100 times
+
+## Probability
+
+```{r sampling-plt, fig.height = 2.5, fig.width = 7}
+set.seed(10)
+rand <- data.frame(score = round(rnorm(20*2*100, mean = avg_male, sd = sd_male)),
+                   group = gl(2,10, 1000),
+                   trial = rep(1:100, each = 20))
+diffs <- data.frame(trial = 1:100,
+                    meandiff = sapply(split(rand, rand$trial),
+                    function(df) with(df, abs(mean(score[group == 1]) - mean(score[group == 2])))))
+ggplot(diffs, aes(x = meandiff, y = factor(1))) +
+    geom_boxplot() +
+    geom_point(position = position_jitter(height = 0.2)) +
+    labs(y = NULL, x = "Difference of means")
+```
+
+## Probability
+
+How likely is a difference of means of >3? How likely is a difference of means of >0.5?
+
+Read off from the [cumulative distribution function]{.highlight} of the [sampling distribution]{.highlight} of statistic
+
+```{r sampling-ecdf, fig.height = 3.5, fig.width = 7}
+plt <- ggplot(diffs, aes(x = meandiff)) +
+    stat_ecdf() +
+    labs(x = "Difference of means")
+plt
+```
+
+## Null hypothesis
+
+Often, the null hypothesis, $\text{H}_0$, is that there is **no effect**
+
+> $\text{H}_0$: there is no effect of **sex** on the bill length of *Adelie* penguins
+
+. . .
+
+This means that, under $\text{H}_0$ we can rearrange the `sex` variable randomly, pairing any value of `bill_length_mm` with a male or female penguin
+
+Under $\text{H}_0$, these shufflings of the data should look similar to our observed data
+
+## Null hypothesis
+
+Under $\text{H}_0$, these shufflings of the data should look similar to our observed data
+
+```{r}
+
+p_obs <- adelie_bills |>
+  ggplot(aes(x = sex, y = bill_length_mm)) +
+  geom_boxplot() +
+  geom_point(aes(colour = sex), position = position_jitter(width = 0.1)) +
+  guides(colour = "none") +
+  plt_labs + labs(title = "Observed data")
+
+adelie_bills_shuffled <- adelie_bills |>
+  mutate(sex = withr::with_seed(256, sample(sex)))
+
+p1 <- adelie_bills_shuffled |>
+  ggplot(aes(x = sex, y = bill_length_mm)) +
+  geom_boxplot() +
+  geom_point(aes(colour = sex), position = position_jitter(width = 0.1)) +
+  guides(colour = "none") +
+  plt_labs + labs(title = "Shuffle 1")
+
+p2 <- adelie_bills |>
+  mutate(sex = withr::with_seed(3478, sample(sex)))|>
+  ggplot(aes(x = sex, y = bill_length_mm)) +
+  geom_boxplot() +
+  geom_point(aes(colour = sex), position = position_jitter(width = 0.1)) +
+  guides(colour = "none") +
+  plt_labs + labs(title = "Shuffle 2")
+
+p3 <- adelie_bills |>
+  mutate(sex = withr::with_seed(21, sample(sex)))|>
+  ggplot(aes(x = sex, y = bill_length_mm)) +
+  geom_boxplot() +
+  geom_point(aes(colour = sex), position = position_jitter(width = 0.1)) +
+  guides(colour = "none") +
+  plt_labs + labs(title = "Shuffle 3")
+
+p4 <- adelie_bills |>
+  mutate(sex = withr::with_seed(48, sample(sex)))|>
+  ggplot(aes(x = sex, y = bill_length_mm)) +
+  geom_boxplot() +
+  geom_point(aes(colour = sex), position = position_jitter(width = 0.1)) +
+  guides(colour = "none") +
+  plt_labs + labs(title = "Shuffle 4")
+
+p_obs + p1 + p2 + p3 + p4 + plot_layout(ncol = 5)
+```
+
+. . .
+
+> Do the shuffled data look like the observed data?
+
+## Permutation test
+
+What we just did is the basis of a [permutation test]{.highlight} of $\text{H}_0$
+
+A real test would shuffle --- **permute** --- the data many more times than 4
+
+## Permutation tests with infer 📦
+
+:::: {.columns}
+
+::: {.column width="60%"}
+```{r}
+#| echo: true
+adelie_shuffled <- withr::with_seed(2,
+  adelie_bills |>
+    specify(bill_length_mm ~ sex) |>
+    hypothesize(null = "independence") |>
+    infer::generate(reps = 1000, type = "permute")
+  )
+```
+:::
+
+::: {.column width="40%"}
+```{r}
+#| dependson: -1
+adelie_shuffled
+```
+:::
+
+::::
+
+## Permutation tests with infer 📦
+
+With the infer 📦 &nbsp;we
+
+1. use `specify()` to say which variables are involved in the test and which is the **response** and which are the **explanatory** variables, and
+2. then use `hypothesize()` to indicate what are we testing --- here we are testing the **independence** of `bill_length_mm` and `sex`, and then
+3. use `generate()` to create 10,000 permutations of the data, which are
+4. stored in `adelie_shuffled`
+
+We also wrapped all that in `withr::with_seed()`, which is another way of setting random seeds for the RNG
+
+## Permutation tests with infer 📦
+
+Now we have 1,000 randomly shuffled --- **permuted** --- data sets
+
+Our null hypothesis ($\text{H}_0$) is that there is
+
+> no difference in the mean bill length of male and female *Adelie* penguins
+
+For each permuted data set we need to calculate the
+
+1. mean `bill_length_mm` for the males --- $\hat{\mu}_{\text{Males}}$
+2. mean `bill_length_mm` for the females --- $\hat{\mu}_{\text{Females}}$
+3. the **difference** of these two means: $\hat{\mu}_{\text{Males}} - \hat{\mu}_{\text{Females}}$
+
+This [difference of means]{.highlight} will be our [test statistic]{.highlight}
+
+## Permutation tests with infer 📦
+
+We could do those calculations using **dplyr** but **infer** makes it even easier via `calculate()`
+
+```{r}
+#| echo: true
+adelie_null_distribution <- adelie_shuffled |>
+  calculate(stat = "diff in means", order = c("male", "female"))
+```
+
+* `"diff in means"` is how we indicate we want a [difference of means]{.highlight}
+* `order` indicates the order of the means in the difference
+
+The order doesn't matter, so long as we are *consistent*
+
+We did $\hat{\mu}_{\text{Males}} - \hat{\mu}_{\text{Females}}$ so we will put `male` first
+
+. . .
+
+This generates the [null distribution]{.highlight} of the test statistic
+
+## Null distribution
+
+The [null distribution]{.highlight} shows the distribution of the test statistic under $\text{H}_0$ of no effect
+
+```{r}
+visualise(adelie_null_distribution, bins = 20)
+```
+
+## Observed value
+
+We also need to compute the observed value of the test statistic (i.e. the one for our data)
+
+Do this using the same pipeline, *without* the `hypothesize()` and `generate()` steps
+
+```{r}
+#| echo: true
+obs_diff_means <- adelie_bills |>
+  specify(bill_length_mm ~ sex) |>
+  calculate(stat = "diff in means", order = c("male", "female"))
+
+obs_diff_means
+```
+
+## Null distribution
+
+If we add the the observed value to the plot we can see how typical our observed difference of means is to the values we would expect if there was **no effect** pf `sex`
+
+```{r}
+#| echo: true
+visualise(adelie_null_distribution, bins = 20) +
+  shade_p_value(obs_stat = obs_diff_means, direction = "both")
+```
+
+## One tail or two?
+
+Whether a test is one- or two-tailed is a common distinction in research studies
+
+Relates to the alternative hypothesis:
+
+- do we hypothesize only that the means are different?, or
+- do we hypothesize that the mean of the males is greater (less) than the females?
+
+This is where concept of one- or two-tailed tests comes from; in which tail do we find the rejection region
+
+```{r one-two-tailed-fig-a, fig.height = 4, fig.width = 20}
+
+df <- data.frame(x = seq(-5, 5, by = 0.1),
+                 density = dt(seq(-5, 5, by = 0.1), df = 8))
+crit.t <- qt(0.05, 8)
+p1 <- ggplot(df, aes(x = x, y = density)) +
+    geom_ribbon(data = subset(df, x <= crit.t),
+                mapping = aes(ymax = density), ymin = 0, fill = "red", colour = NA, alpha = 0.5) +
+    geom_line()
+crit.t <- qt(0.95, 8)
+p2 <- ggplot(df, aes(x = x, y = density)) +
+    geom_ribbon(data = subset(df, x >= crit.t),
+                mapping = aes(ymax = density), ymin = 0, fill = "red", colour = NA, alpha = 0.5) +
+    geom_line()
+crit.t <- qt(0.025, 8)
+crit.t2 <- qt(0.975, 8)
+p3 <- ggplot(df, aes(x = x, y = density)) +
+    geom_ribbon(data = subset(df, x <= crit.t),
+                mapping = aes(ymax = density), ymin = 0, fill = "red", colour = NA, alpha = 0.5) +
+    geom_ribbon(data = subset(df, x >= crit.t2),
+                mapping = aes(ymax = density), ymin = 0, fill = "red", colour = NA, alpha = 0.5) +
+    geom_line()
+# grid.arrange(p1, p2, p3, ncol = 3)
+
+p1 + p2 + p3 + plot_layout(ncol = 3)
+```
+
+## Null distribution
+
+If we add the the observed value to the plot we can see how typical our observed difference of means is to the values we would expect if there was **no effect** of `sex`
+
+We asked for `direction = "both"` so the alternative hypothesis is that the males and females have different mean bill lengths
+
+```{r}
+visualise(adelie_null_distribution, bins = 20) +
+  shade_p_value(obs_stat = obs_diff_means, direction = "both")
+```
+
+## Alternative hypothesis
+
+We typically denote the alternative hypothesis as $\text{H}_1$ or $\text{H}_{\text{a}}$
+
+This hypothesis is usually what we are interested in knowing about, but we can't test it explicitly
+
+$\text{H}_{\text{a}}$ could be:
+
+1. that male and female *Adelie* penguins have **different** bill lengths on average, or
+2. that male *Adelie* penguins have **longer** bill lengths on average than females, or
+3. that male *Adelie* penguins have **shorter** bill lengths on average than females
+
+## Alternative hypothesis
+
+1. that male and female *Adelie* penguins have **different** bill lengths on average, or
+2. that male *Adelie* penguins have **longer** bill lengths on average than females, or
+3. that male *Adelie* penguins have **shorter** bill lengths on average than females
+
+Option 1 is a two-sided test so we set `direction` to be `"two-sided"` or `"both"`
+
+Option 2 is a one-sided test so we set `direction` to be `"greater"` or `"right"`
+
+Option 3 is also a one-sided test but we set `direction` to be `"less"` or `"left"`
+
+(for `order = c("male", "female")`!)
+
+## Alternative hypothesis
+
+Before observing the penguins, if we had hypothesized that males had longer bills than females, we could have done a [one-sided]{.highlight} of the hypothesis
+
+> male *Adelie* penguins have **longer** bill lengths on average than females
+
+\begin{align*}
+\text{H}_{\text{0}} & : \hat{\mu}_{\text{Males}} = \hat{\mu}_{\text{Females}} \\
+\text{H}_{\text{a}} & : \hat{\mu}_{\text{Males}} > \hat{\mu}_{\text{Females}}
+\end{align*}
+
+## Alternative hypothesis
+
+It might be easier to express our hypotheses in terms of the **difference of means**
+
+#### Two-tailed
+
+\begin{align*}
+\text{H}_{\text{0}} & : \hat{\mu}_{\text{Males}} - \hat{\mu}_{\text{Females}} = 0 \\
+\text{vs H}_{\text{a}} & : \hat{\mu}_{\text{Males}} - \hat{\mu}_{\text{Females}} \neq 0
+\end{align*}
+
+#### One-tailed
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+##### `"less"`
+
+\begin{align*}
+\text{H}_{\text{0}} & : \hat{\mu}_{\text{Males}} - \hat{\mu}_{\text{Females}} = 0 \\
+\text{vs H}_{\text{a}} & : \hat{\mu}_{\text{Males}} - \hat{\mu}_{\text{Females}} < 0
+\end{align*}
+:::
+
+::: {.column width="50%"}
+
+##### `"greater"`
+
+\begin{align*}
+\text{H}_{\text{0}} & : \hat{\mu}_{\text{Males}} - \hat{\mu}_{\text{Females}} = 0 \\
+\text{vs H}_{\text{a}} & : \hat{\mu}_{\text{Males}} - \hat{\mu}_{\text{Females}} > 0
+\end{align*}
+:::
+
+::::
+
+## Alternative hypothesis
+
+```{r}
+#| echo: true
+visualise(adelie_null_distribution, bins = 20) +
+  shade_p_value(obs_stat = obs_diff_means, direction = "greater")
+```
+
+## Don't change your mind
+
+You *must* decide what kind of $\text{H}_{\text{a}}$ you want to test *before* you observe (or analyse) the data
+
+You can't use a two-sided alternative
+$$
+\text{H}_{\text{a}} : \hat{\mu}_{\text{Males}} - \hat{\mu}_{\text{Females}} \neq 0
+$$
+
+and reject $\text{H}_{\text{0}}$, noting that males have longer bills than females and **then** decide to use the more powerful alternative
+
+$$
+\text{H}_{\text{a}} : \hat{\mu}_{\text{Males}} - \hat{\mu}_{\text{Females}} > 0
+$$
+
+## The *p*-value of the test
+
+Using the null distribution we can obtain a *p*-value
+
+> the probability that a test statistic as or more extreme than the observed statistic would occur **if the null hypothesis were true**
+
+We count how many difference of means in the null distribution are
+
+* equal to or greater than (in absolute value)
+* greater than, or
+* less than
+
+the observed difference of means $\hat{\mu}_{\text{Males}} - \hat{\mu}_{\text{Females}}$
+
+. . .
+
+Why "in absolute value" for the two-sided test?
+
+## The *p*-value of the test
+
+In our case, the *p*-value is reported to be 0
+
+```{r}
+#| echo: true
+# p value for the simpler alternative of the bill lengths are different
+adelie_null_distribution |>
+  get_p_value(obs_stat = obs_diff_means, direction = "two-sided")
+
+# p value for the stronger alternative of male bill lengths are larger
+adelie_null_distribution |>
+  get_p_value(obs_stat = obs_diff_means, direction = "greater")
+```
+
+This doesn't make sense so instead we say the $p$ is less than 0.001
+
+$$\text{p value} = p = \frac{1}{P}$$
+
+$P$ is the number of permuted data sets we generated (1000 here)
+
+# Null Hypothesis Significance Testing
+
+## NHST
+
+This is the basis of [Null Hypothesis Significance Testing]{.highlight} or NHST
+
+The [null hypothesis]{.highlight} is the situation we test; no difference in means between groups, no relationship between *x* and *y*
+
+Look for **evidence** against this null hypothesis; unlikely values of statistics if the *null hypothesis were true*
+
+<!--
+Probability that difference of means >=`{r} round(avg_male - avg_female, 2)` &rarr; `{r} with(diffs, round(sum(meandiff >= round(avg_male - avg_female, 2)) / nrow(diffs), 2))`
+
+Probability that difference of means >= 0.5 = `r with(diffs, round(sum(meandiff >= 0.5) / nrow(diffs), 2))`
+-->
+
+We permuted the data to generate the null distribution of the test statistic
+
+> the sampling distribution of the test statistic under $\text{H}_0$
+
+Much theoretical work in statistics is in deriving sampling distributions of different statistics, or types of statistics, using maths instead of resampling (permuting)
+
+## Standard normal distribution
+
+The [standard normal distribution]{.highlight} is a Gaussian distribution with $\mathsf{\mu = 0}$ & $\mathsf{\sigma^2 = 1}$
+
+People often call values from this distribution **z-scores**
+
+Calculate *z*-scores by subtracting the mean score from each score and dividing by $\sigma$
+
+$$z_i = \mathsf{\frac{\text{score}_i - \text{mean}}{\text{standard deviation}}}$$
+
+$$z_i = \mathsf{\frac{14 - \text{14.95}}{\text{5.47}}} = \mathsf{`r round((14-14.95) / 5.47, 2)`}$$
+
+Negative *z*-scores lie below the sample mean, positive scores above it
+
+A *z*-score of `{r} round((2-avg_male) / sd_male, 2)` tells us that the score of 2mm is `{r} abs(round((2 - avg_male) / sd_male, 2))` standard deviations *below* the mean
+
+## Standard normal distribution
+
+**68%** probability *z*-score lies between -1--1; **95%** probability *z*-score lies between -1.96--1.96
+
+```{r standard-normal-plt}
+x <- seq(-3.5, 3.5, length = 500)
+df <- data.frame(density = dnorm(x, mean = 0, sd = 1), x = x)
+dfsub <- subset(df, abs(x) <= 1.96)
+plt <- ggplot(df, aes(x = x, y = density)) +
+    geom_ribbon(data = subset(df, abs(x) <= 5), mapping = aes(ymax = density, ymin = 0),
+                fill = "red", colour = NA, alpha = 0.4) +
+    geom_ribbon(data = subset(df, abs(x) <= 1.96), mapping = aes(ymax = density, ymin = 0),
+                fill = "green", colour = NA, alpha = 0.4) +
+    geom_ribbon(data = subset(df, abs(x) <= 1), mapping = aes(ymax = density, ymin = 0),
+                fill = "blue", colour = NA, alpha = 0.4) +
+                    geom_line() +
+                        scale_x_continuous(breaks = seq(-3, 3, by = 1))
+plt
+
+```
+
+## The *p*-value
+
+Probability distributions, like the standard normal or *t* distribution, help us compute the probability of obtaining a statistics if the null hypothesis were true
+
+This is the probability due the **chance**
+
+Under standard normal, probability of observing a score of 2.5 is `r round(pnorm(2.5, lower.tail = FALSE), 3)`
+
+Under *t* distribution with 5 df, probability of observing a score of 2.5 is `r round(pt(2.5, df = 5, lower.tail = FALSE), 3)`
+
+*t* distribution often used for small samples & where sample variance is estimated (not know) which for many samples will be an underestimate of the true variance
+
+. . .
+
+**The *p*-value tells us *nothing* about the probability of the null hypothesis or the alternative hypothesis**
+
+## *t* and normal distributions
+
+```{r t-and-normal-distributions, out.width = "0.85\\linewidth", fig.width = 10, fig.height = 5}
+
+x <- seq(4, -4, length = 500)
+df <- data.frame(density = c(dnorm(x), dt(x, df = 3-1), dt(x, df = 5-1), dt(x, df = 10-1)),
+                 x = rep(x, 4),
+                 distribution = factor(rep(c("Normal", "t(2)", "t(4)", "t(9)"), each = 500),
+                                       levels = c("Normal", "t(2)", "t(4)", "t(9)")))
+plt1 <- ggplot(df, aes(x = x, y = density, colour = distribution)) +
+    geom_line() + theme(legend.position = "top") +
+        guides(col = guide_legend(nrow = 2, title.position = "top"))
+x2 <- seq(1, 6, length.out = 500)
+df2 <- data.frame(probability = (1 - c(pnorm(x2, lower.tail = TRUE),
+                                  pt(x2, lower.tail = TRUE, df = 3-1),
+                                  pt(x2, lower.tail = TRUE, df = 4-1),
+                                  pt(x2, lower.tail = TRUE, df = 5-1),
+                                  pt(x2, lower.tail = TRUE, df = 10-1),
+                                  pt(x2, lower.tail = TRUE, df = 20-1))) * 2,
+                  x = rep(x2, 6),
+                  distribution = factor(rep(c("Normal", "t(2)", "t(3)", "t(4)", "t(9)", "t(19)"),
+                                            each = 500),
+                                        levels = c("Normal", "t(2)", "t(3)", "t(4)", "t(9)",
+                                                   "t(19)")))
+plt2 <- ggplot(df2, aes(x = x, y = probability, colour = distribution)) +
+    geom_line() + scale_y_continuous(breaks = c(seq(0.01, 0.05, by = 0.01), 0.1)) +
+        theme(legend.position = "top") + guides(col = guide_legend(nrow = 2, title.position = "top"))
+# grid.arrange(plt1, plt2, ncol = 2)
+plt1 + plt2 + plot_layout(ncol = 2)
+```
+
+Redrawn from **Krzywinski & Altman** (2013) [Significance, *P* values and *t*-tests](http://doi.org/10.1038/nmeth.2698). *Nature Methods* **10**(11) 1041--1042 [doi: 10.1038/nmeth.2698](http://doi.org/10.1038/nmeth.2698)
+
+## One- and two-tailed tests
+
+Whether a test is one- or two-tailed is a common distinction in research studies
+
+Relates to the hypothesis:
+
+- do we hypothesize only that the means are different?, or
+- do we hypothesize that the mean of the treated group is greater (less) than the control?
+
+This is where concept of one- or two-tailed tests comes from; in which tail do we find the rejection region
+
+```{r one-two-tailed-fig, fig.height = 4, fig.width = 20}
+
+df <- data.frame(x = seq(-5, 5, by = 0.1),
+                 density = dt(seq(-5, 5, by = 0.1), df = 8))
+crit.t <- qt(0.05, 8)
+p1 <- ggplot(df, aes(x = x, y = density)) +
+    geom_ribbon(data = subset(df, x <= crit.t),
+                mapping = aes(ymax = density), ymin = 0, fill = "red", colour = NA, alpha = 0.5) +
+    geom_line()
+crit.t <- qt(0.95, 8)
+p2 <- ggplot(df, aes(x = x, y = density)) +
+    geom_ribbon(data = subset(df, x >= crit.t),
+                mapping = aes(ymax = density), ymin = 0, fill = "red", colour = NA, alpha = 0.5) +
+    geom_line()
+crit.t <- qt(0.025, 8)
+crit.t2 <- qt(0.975, 8)
+p3 <- ggplot(df, aes(x = x, y = density)) +
+    geom_ribbon(data = subset(df, x <= crit.t),
+                mapping = aes(ymax = density), ymin = 0, fill = "red", colour = NA, alpha = 0.5) +
+    geom_ribbon(data = subset(df, x >= crit.t2),
+                mapping = aes(ymax = density), ymin = 0, fill = "red", colour = NA, alpha = 0.5) +
+    geom_line()
+# grid.arrange(p1, p2, p3, ncol = 3)
+
+p1 + p2 + p3 + plot_layout(ncol = 3)
+```
+
+## Theoretical test
+
+The classical test for a difference of means is known as a two-sample *t* test
+
+```{r}
+t.test(bill_length_mm ~ sex, data = adelie_bills, var.equal = TRUE)
+```
+
+## Theoretical test
+
+The two-sample *t* test is a special case of a [linear model]{.highlight}
+
+```{r}
+#| echo: true
+#| output-location: column
+m <- lm(bill_length_mm ~ sex,
+  data = adelie_bills)
+summary(m)
+```
+
+## Theoretical test
+
+The two-sample *t* test is a special case of a [linear model]{.highlight}
+
+```{r}
+#| echo: true
+library("marginaleffects")
+
+avg_comparisons(m)
+```
+
+. . .
+
+We will focus on [linear models]{.highlight} on this course
+
+## Type I and Type II errors
+
+In NHST we obtain the probability ($p$) of observing as extreme a statistic as the observed *if the null hypothesis were true*: evidence *against* the null
+
+If $p$ is small we **reject** the null hypothesis & accept the alternative: chance that we falsely reject the Null
+
+If $p$ is large we **fail to reject** the null hypothesis & thus **reject** the alternative: chance that we falsely fail to reject the Null
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+##### No effect in population
+
+- Reject null hypothesis: [Type I error]{.highlight}
+- Fail to reject null hypothesis: *correct decision*
+
+:::
+
+::: {.column width="50%"}
+##### Effect in population
+
+- Reject null hypothesis: *correct decision*
+- Fail to reject null hypothesis: [Type II error]{.highlight}
+
+:::
+
+::::
+
+## Statistical Significance
+
+:::: {.columns}
+
+::: {.column width="75%"}
+
+- What is a small *p*-value?
+- A typical value is *p* <= 0.05, which means 5% Type I error rate, or 5 times in 100 you'd expect to see as extreme a statistic as the observed ***purely due to chance*** *if* $\text{H}_0$ is **true**
+- In other words; you'd **falsely** reject the null hypothesis, on average, 5 times in 100
+- Might be OK for some studies or research
+- Probably not OK for making life & death decisions or declaring you've found a new elementary particle
+- Particle physicists use [5 sigma]{.highlight}: need a *p* <= ~0.000000287 to reject the null!
+
+:::
+
+::: {.column width="25%"}
+
+```{r}
+knitr::include_graphics("assets/p_values.png")
+```
+
+[Randall Munroe  <http://xkcd.com/1478/>]{.source}
+
+:::
+
+::::
+
+## Problems with NHST: Effect Size
+
+A major problem with peoples' use of NHST is the over-emphasis put on the *p*-value
+
+The *p*-value is just a measure of conditional probability; just because you get a low *p*-value doesn't mean the [effect]{.highlight} is **important**
+
+Increase the sample size and, all things equal, you can detect smaller effects (statistically significant effects)
+
+Important to ask if the [effect size]{.highlight} is important or relevant?
+
+**Effect size** refers to the
+
+- magnitude of the difference between groups
+- magnitude of the relationship between $x$ and $y$
+
+## Problems with NHST: power
+
+Statistical [power]{.highlight} is the ability of a study to **detect** a real effect
+
+**Power** is a function of the Type II error:
+
+$$\mathsf{power} = 1 - \beta$$
+
+Power ranges from **0** (no chance of detecting the real effect) to **1** (100% chance of detecting the real effect)
+
+There is no point in conducting a study, especially one involving animals, that has low chance of finding the real effect
+
+## Problems with NHST: power
+
+Power is a function of several important factors
+
+ 1. **Sample size** --- the larger the sample size the greater the power to detect an effect of a given size
+ 2. **Criterion** for significance ($\mathsf{\alpha = 0.05}$ say) --- the lower $\mathsf{\alpha}$, the less likely you are to reject the null hypothesis
+ 3. **One- or two-tailed tests** --- one-tailed tests are typically more powerful than two-tailed ones; making a stronger statement about the expected effect
+ 4. **Effect size** --- the bigger the effect the study tries to detect the greater the power
+
+For simple models (*t*-tests, one-way ANOVA, etc) there are relatively simple equations for computing the power of a planned study for given sample size, effect size etc.
+
+For more complex models, power calculations become difficult; simulation using a computer is a solution
+
+# Confidence Intervals
+
+## Confidence Intervals
+
+In NHST, too much emphasis is placed on just the sample statistic (mean, difference of means, regression slope $\beta_j$, etc)
+
+A different way of presenting statistical results is the [confidence interval]{.highlight}
+
+Confidence intervals can be interpreted as (from Wikipedia)
+
+- Were this procedure to be repeated on multiple samples, the calculated confidence interval (which would differ for each sample) would encompass the true population parameter 95% of the time
+- There is a 95% probability that the calculated confidence interval from some future experiment encompasses the true value of the population parameter
+- The confidence interval represents values for the population parameter for which the difference between the parameter and the observed estimate is not statistically significant at the 5% level
+
+## Confidence intervals
+
+As with the resampling (permutation) and theoretical approaches we used for hypothesis testing we can compute a resampling or theoretical version of a confidence interval
+
+The resampling version uses a non-parametric bootstrap procedure
+
+## Bootstrap
+
+The standard error of the mean (SEM)
+
+> the estimated standard deviation of the means of all possible samples of the variable
+
+Rather than use this theoretical result we could [resample]{.highlight} the data to generate the sampling distribution
+
+In stead of permuting the data (resampling without replacement) we'll use resampling **with** [replacement]{.highlight}
+
+**With replacement** means that each time we draw a single data point to add to our sample, we put it back so it can be drawn again
+
+## Bootstrap
+
+A single bootstrap sample then is the same size as our data
+
+But it will include repeats of some of the observed values
+
+This also means some values in the data won't be in a bootstrap sample
+
+## Bootstrap
+
+A single bootstrap sample can be generated using `rep_sample_n()`
+
+Set `replace = TRUE` to get a bootstrap sample instead of a permutation
+
+```{r}
+#| echo: true
+#| output-location: column
+adelie_bills |>
+  rep_sample_n(
+    size = 40,
+    replace = TRUE
+  ) |>
+  select(replicate, bill_length_mm, sex)
+```
+
+## Bootstrap
+
+To generate multiple samples, set `reps`
+
+```{r}
+#| echo: true
+#| output-location: column
+adelie_bills |>
+  rep_sample_n(
+    size = 40,
+    replace = TRUE,
+    reps = 21
+  ) |>
+  select(replicate, bill_length_mm, sex)
+```
+
+## Bootstrap
+
+```{r}
+obs_bp <- adelie_bills |>
+  ggplot(aes(x = sex, y = bill_length_mm, colour = sex)) +
+  geom_boxplot() +
+  labs(x = NULL, y = "Bill length (mm)") +
+  guides(colour = "none")
+
+n_plts <- 5
+boot_plts <- adelie_bills |>
+  rep_sample_n(
+    size = 40,
+    replace = TRUE,
+    reps = 21
+  ) |>
+  filter(replicate %in% seq_len(n_plts)) |>
+  ggplot(aes(x = sex, y = bill_length_mm, colour = sex)) +
+  geom_boxplot() +
+  facet_wrap(~replicate, ncol = n_plts) +
+  labs(x = NULL, y = "Bill length (mm)") +
+  guides(colour = "none")
+
+obs_bp + boot_plts + plot_layout(widths = c(1/6, 5/6))
+```
+
+## Bootstrap CI
+
+Can use the bootstrap to generate a CI for the mean bill length of the male *Adelie* penguins
+
+```{r}
+#| echo: true
+#| output-location: column
+#| fig.height: 3
+#| fig.width: 4
+male_boot <- adelie_bills |>
+  filter(sex == "male") |>
+  specify(response = bill_length_mm) |>
+  generate(
+    reps = 1000,
+    type = "bootstrap") |>
+  calculate("mean")
+
+male_boot |>
+  visualize()
+```
+
+## Bootstrap CI
+
+The percentile CI uses percentiles of the distribution. E.g. for 95% CI
+
+* lower endpoint is 0.025 quantile (2.5%)
+* upper endpoint is 0.975 quantile (97.5%)
+
+```{r}
+#| echo: true
+#| output-location: column
+#| fig.height: 3
+#| fig.width: 4
+#| dependson: -1
+male_ci <- male_boot |>
+  get_ci(type = "percentile", level = 0.95)
+
+male_boot |>
+  visualize() +
+  shade_ci(endpoints = male_ci)
+```
+
+Interval: `{r} male_ci |> pull(lower_ci) |> round(2)` -- `{r} male_ci |> pull(upper_ci) |> round(2)`mm
+
+## Bootstrap
+
+Difference of means of 21 bootstrap samples of the *Adelie* penguin bill lengths
+
+```{r}
+#| echo: true
+#| output-location: column
+#| fig.height: 3
+#| fig.width: 4
+adelie_bills |>
+  specify(bill_length_mm ~ sex) |>
+  generate(
+    reps = 21,
+    type = "bootstrap") |>
+  calculate(
+    stat = "diff in means",
+    order = c("male", "female")) |>
+  visualize()
+```
+
+. . .
+
+21 samples is too small to do much with
+
+## Bootstrap
+
+Difference of means of 1000 bootstrap samples of the *Adelie* penguin bill lengths
+
+```{r}
+#| echo: true
+#| output-location: column
+#| fig.height: 3
+#| fig.width: 4
+boot_distn <- adelie_bills |>
+  specify(bill_length_mm ~ sex) |>
+  generate(
+    reps = 1000,
+    type = "bootstrap") |>
+  calculate(
+    stat = "diff in means",
+    order = c("male", "female"))
+
+visualize(boot_distn)
+```
+
+## Percentile CI
+
+```{r}
+#| echo: true
+#| dependson: -1
+pc_ci <- boot_distn |>
+  get_ci(type = "percentile", level = 0.95)
+
+pc_ci
+```
+
+Does the confidence interval include 0?
+
+## Percentile CI
+
+```{r}
+#| echo: true
+#| output-location: column
+#| fig.height: 3
+#| fig.width: 4
+#| dependson: c(-1,-2)
+boot_distn |>
+  visualize() +
+  shade_ci(endpoints = pc_ci)
+```
+
+## Theoretical CI[s]{.lowercase}
+
+```{r prep-confidence-interval-data}
+# df <- data.frame(mean = aggregate(score ~ group, data = avoidance, FUN = mean)[,2],
+#                  sd = aggregate(score ~ group, data = avoidance, FUN = sd)[,2],
+#                  n = aggregate(score ~ group, data = avoidance, FUN = NROW)[,2],
+#                  group = levels(avoidance$group))
+# df <- transform(df, se = sd / sqrt(n))
+# crit <- qt(0.025, df = df$n[1] - 1, lower.tail = FALSE)
+# df <- transform(df,
+#                 upper = mean + (crit * se),
+#                 lower = mean - (crit * se))
+
+summ_df <- adelie_bills |>
+  group_by(sex) |>
+  summarise(
+    mean = mean(bill_length_mm),
+    sd = sd(bill_length_mm),
+    n = n(),
+    se = sd / sqrt(n)) |>
+  mutate(
+    upper_ci = mean + (adelie_crit_t * se),
+    lower_ci = mean - (adelie_crit_t * se)
+    )
+```
+
+Theoretical CI for the mean bill length for the male penguins
+
+- **Mean of the males** --- `{r} round(avg_male, 2)`; **SD of the males** --- `{r} round(sd_male, 2)`
+- **Standard error of mean** --- $\frac{\hat{\sigma}}{\sqrt{n}} = \frac{`{r} round(sd_male, 2)`}{\sqrt{`{r} nrow(adelie_bills) / 2`}} = \frac{`{r} round(sd_male, 2)`}{`{r} round(sqrt(nrow(adelie_bills) / 2), 2)`} = `{r} round(sd_male / sqrt(nrow(adelie_bills) / 2), 2)`$
+- **Critical value of *t* for 95% test** --- `{r} round(qt((1 - 0.95) / 2, df = nrow(adelie_bills) / 2 - 1, lower.tail = FALSE), 3)`
+    + `qt(0.025, df = 20-1, lower.tail = FALSE)`
+- **95% Confidence interval is**
+
+    $$\mathsf{CI} = \overline{y} \pm  (`{r} round(qt((1 - 0.95) / 2, df = nrow(adelie_bills) / 2 - 1, lower.tail = FALSE), 3)` \times \mathsf{SEM})$$
+
+- **Lower CI limit** --- `{r} avg_male - (adelie_crit_t * sem_male) |> round(2)`
+- **Upper CI limit** --- `{r} avg_male + (adelie_crit_t * sem_male) |> round(2)`
+
+## Theoretical CI[s]{.lowercase}
+
+```{r confidence-intervals, fig.width = 10, fig.height = 5}
+
+# p <- ggplot(avoidance, aes(x = score, y = group, colour = group)) +
+#     geom_point(position = position_jitter(height = 0.2)) +
+#     geom_errorbarh(data = df, aes(xmax = upper, xmin = lower, x = mean),
+#                    height = 0.2, colour = "black") +
+#     geom_errorbarh(data = df, aes(xmax = mean + se, xmin = mean - se, x = mean),
+#                    height = 0.1, colour = "black") +
+#     geom_point(data = df, aes(xmax = upper, xmin = lower, x = mean)) +
+#     geom_point(data = avoidance, aes(x = score, y = group, colour = group),
+#                position = position_jitter(height = 0.2)) +
+#     theme(legend.position = "top")
+#p
+set.seed(1)
+p <- adelie_bills |>
+  ggplot(aes(x = bill_length_mm, y = sex, colour = sex)) +
+    geom_point(position = position_jitter(height = 0.2)) +
+    geom_errorbarh(
+      data = summ_df,
+      aes(y = sex, xmax = upper_ci, xmin = lower_ci),
+      height = 0.2, colour = "black", inherit.aes = FALSE
+    ) +
+    geom_errorbarh(
+      data = summ_df,
+      aes(y = sex, xmax = mean + se, xmin = mean - se),
+      height = 0.1, colour = "black", inherit.aes = FALSE
+    ) +
+    geom_point(
+      data = summ_df,
+      aes(x = mean, y = sex),
+      size = 3, inherit.aes = FALSE
+    ) +
+    labs(x = "Bill length (mm)", y = NULL, colour = "Sex") +
+    scale_y_discrete(labels = c("Feale", "Male"))
+p
+
+```
+
+## Theoretical CI[s]{.lowercase}
+
+```{r}
+#| echo: false
+tstat <- t.test(bill_length_mm ~ sex, data = adelie_bills)
+```
+
+The theoretical 95% CI for the difference of means for the male and female *Adelie* penguins is: `{r} abs(tstat$conf.int[2]) |> round(2)` -- `{r} abs(tstat$conf.int[1]) |> round(2)`
+
+The bootstrap 95% CI is: `{r} pc_ci |> pull(lower_ci) |> round(2)` -- `{r} pc_ci |> pull(upper_ci) |> round(2)`
+
+## Resampling inference
+
+Resampling-based inference is a general approach to inference in statistics
+
+Theoretical approaches developed in era of no computers
+
+Resampling methods exploit fast computation
+
+Fewer assumptions, but some assumptions remain
+
+Theoretical approaches still have their place
+
+## How good are diagnostic tests?
+
+Diagnostic testing --- say for SARS-CoV-2 --- is typically thought of as
+
+1. someone either has the disease or not,
+2. they take a test which comes out either positive or negative,
+3. that test tells us the truth
+
+What does "true positive" mean? Carrying the virus, infectious, ...?
+
+What is a "positive" results depends on the type of test (PCR or rapid lateral flow)
+
+All tests can give a "wrong" result
+
+## True & False positives & negatives
+
+A [false negative]{.highlight} is a negative test result when patient has the disease
+
+A [false positive]{.highlight} is a positive test result when the patient doesn't have the disease
+
+Two-way table
+
+|        | Disease | No disease |
+|--------|---------|------------|
+| + test |   TP    |     FP     |
+| - test |   FN    |     TN     |
+
+## Accuracy of test results
+
+We describe the accuracy of test results through two quantities
+
+* TPR --- [True-positive rate]{.highlight}
+
+> the proportion of people with the virus who get a positive test result
+
+We also call this [sensitivity]{.highlight}
+
+* TNR --- [True-negative rate]{.highlight}
+
+> the proportion of people not infected with the virus who get a negative test result
+
+We also call this [specificity]{.highlight}
+
+## Accuracy of test results
+
+Confusingly, however, we typically use the complements of these values
+
+False positive rate: 1 - sensitivity
+
+False negative rate: 1 - specificity
+
+## False positive & negative rates
+
+At the end of June 2020 in the UK less than 0.05% of PCR test results were positive
+
+Even if no virus circulating, the estimated false positive rate could be no larger than 0.05%
+
+For every 20,000 people *without* the virus, we would expect just one to test positive
+
+It was also estimated that between 5% and 15% of positive test results were false (FN)
+
+Similar values could be reported for lateral flow devices
+
+## Test conclusions
+
+A positive test result doesn't mean you are infected
+
+What's more important for people is the probability that you are infected if you test positive
+
+More generally, what does a particular test result mean for an individual?
+
+These are [predictions]{.highlight}, conditional upon a given test result
+
+## Test conclusions
+
+Suppose a lateral flow test has a TPR = 60% and TNR of 99.9% (a FPR or 1 in 1,000)
+
+Suppose further that the virus is at levels in early March 2021, when ~0.3% of the UK population had an infection
+
+What happens if we test 1,000,000 people?
+
+. . .
+
+3,000 people have the disease (0.3% of 1,000,000) of whom 1,800 test positive (60% of 3,000)
+
+. . .
+
+997,000 people don't have the disease but 997 (0.1%) get a false positive test result
+
+. . .
+
+The FPR is 1:1,000 yet 36% (1,800 / (1,800 + 997)) of positive test results are false
+
+
+## Test conclusions
+
+```{mermaid}
+flowchart LR
+  poptested["1,000,000"]
+  disease["3,000"]
+  nodisease["997,000"]
+  pop((Population)) --> |tested | poptested
+  poptested --> | disease | disease
+  poptested --> | no disease | nodisease
+  disease --> test1{Test}
+  test1 --> | positive | tp["1,800"]
+  test1 --> | negative | fn["1,200"]
+  nodisease --> test2{Test}
+  test2 --> | positive | fp["997"]
+  test2 --> | negative | tn["996,003"]
+  tp --> tps[TP]
+  fn --> fns[FN]
+  fp --> fps[FP]
+  tn --> tns[TN]
+```
+
+## Test conclusions
+
+The FPR is 1:1,000 yet 36% (1,800 / (1,800 + 997)) of positive test results are false
+
+This is **confusing** to many people
+
+> as a disease gets rarer, more positive test results will be false
+
+This is an application of [Bayes' Theorem]{.highlight}
+
+Shows how important the underlying prevalence of disease is in interpretting test results
+
+## Conditional probability
+
+Mamography is ~90% accurate for screening breast cancer
+
+Assuming 1% of screened women have breast cancer
+
+```{mermaid}
+flowchart LR
+  popscreened["1,000"]
+  cancer["10"]
+  nocancer["990"]
+  pop((Population)) --> | screened | popscreened
+  popscreened --> | cancer | cancer
+  popscreened --> | no cancer | nocancer
+  cancer --> test1{Test}
+  test1 --> | positive | tp[9]
+  test1 --> | negative | fn[1]
+  nocancer --> test2{Test}
+  test2 --> | positive | fp[99]
+  test2 --> | negative | tn[891]
+  tp --> tps[TP]
+  fn --> fns[FN]
+  fp --> fps[FP]
+  tn --> tns[TN]
+```
+
+. . .
+
+Shows the harm screening can cause if underlying risk is low
+
+## Evidence based medicine
+
+> Evidence-based veterinary medicine is the formal strategy to integrate the best research evidence available combined with clinical expertise as well as the unique needs or wishes of each client in clinical practice. Much of this is based on results from research studies that have been critically-designed and statistically evaluated.
+
+## 5 steps
+
+1. Translation of uncertainty to an answerable question
+2. Systematic retrieval of the best evidence available
+3. Critical appraisal of evidence for internal validity:
+    * Systematic errors as a result of selection bias, information bias and confounding
+    * Quantitative aspects of diagnosis and treatment
+    * The effect size and aspects regarding its precision
+    * Clinical importance of results
+    * External validity or generalizability
+4. Application of results in practice
+5. Evaluation of performance
+
+## 5 steps
+
+1. **Ask** --- This step is about identifying the right questions the veterinary surgeons need answers to
+2. **Acquire** --- This step is about obtaining evidence on the subject of interest. This involves systematic searching for existing literature, and where there is no evidence, undertaking new studies to answer question of interest
+3. **Appraise** --- This step involves appraising the literature for quality and sources of bias that may affect the believability of the results
+4. **Apply** --- This step involves applying the evidence to practice, where appropriate
+5. **Audit** --- This step is all about assessing whether the application of the new evidence has affected the outcome of interest
+
+## Levels of evidence
+
+Current gold standard is the randomised controlled trial (RCT)
+
+* Level I: evidence obtained from at least 1 properly designed RCT
+* Level II-1: evidence obtained from well-designed controlled trials without randomization
+* Level II-2: evidence obtained from well-designed cohort studies or case-control studies, preferably from more than one center or research group
+* Level II-3: evidence obtained from multiple time series designs with or without the intervention. Dramatic results in uncontrolled trials might also be regarded as this type of evidence
+* Level III: opinions of respected authorities, based on clinical experience, descriptive studies, or reports of expert committees
+
+## Criticisms
+
+* Disconnect between the evidence from RCTs at level of groups of people vs what's best for an individual patient
+* May not be possible to do RCTs, meta-analysis, expert reviews for all diseases
+* Evidence tends to be in studies of single diseases while many situations patients present with multiple comorbidities
+* Dealing with biases in what is researched and published
+* Lags between research being done and published, and published and put into practice
+
+## Practicalities
+
+You need to develop a range of skills as a veterinarian
+
+* statistics
+* data science
+* domain knowledge
+
+Statistical literacry --- data literacy
+
+Can you read and appraise the literature?
