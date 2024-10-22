@@ -1,5 +1,5 @@
 ---
-title: Dyr, dyrlæge of samfund
+title: Dyr, dyrlæge og samfund
 subtitle: "Introduction to statistics"
 format:
   aarhus-revealjs:
