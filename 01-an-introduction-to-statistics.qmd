@@ -1,5 +1,5 @@
 ---
-title: Dyr og Data
+title: Dyr, dyrlæge of samfund
 subtitle: "Introduction to statistics"
 format:
   aarhus-revealjs:
@@ -12,9 +12,6 @@ author:
   - name: Gavin Simpson
     orcid: 0000-0002-9084-8413
     email: gavin@anivet.au.dk
-    affiliations: Aarhus University
-  - name: Mona Larsen
-    email: mona@anivet.au.dk
     affiliations: Aarhus University
 date: last-modified
 title-slide-attributes:
@@ -54,8 +51,11 @@ plt_labs <- labs(x = NULL, y = "Bill length(mm)")
 
 In science we collect data to test hypotheses
 
-We use statistics
+We use statistics to quantify evidence for or against hypotheses
 
+We quantify evidence through the building of statistical models
+
+Models are a simplification of the real, complex system we are studying
 
 ## Inference
 
@@ -227,7 +227,11 @@ Often, the null hypothesis, $\text{H}_0$, is that there is **no effect**
 
 This means that, under $\text{H}_0$ we can rearrange the `sex` variable randomly, pairing any value of `bill_length_mm` with a male or female penguin
 
-Under $\text{H}_0$, these shufflings of the data should look similar to our observed data
+## Alternative hypothesis
+
+We typically denote the alternative hypothesis as $\text{H}_1$ or $\text{H}_{\text{a}}$
+
+This hypothesis is usually what we are interested in knowing about, but we can't test it explicitly
 
 ## Null hypothesis
 
@@ -472,7 +476,7 @@ Option 3 is also a one-sided test but we set `direction` to be `"less"` or `"lef
 
 ## Alternative hypothesis
 
-Before observing the penguins, if we had hypothesized that males had longer bills than females, we could have done a [one-sided]{.highlight} of the hypothesis
+Before observing the penguins, if we had hypothesized that males had longer bills than females, we could have done a [one-sided]{.highlight} test of the hypothesis
 
 > male *Adelie* penguins have **longer** bill lengths on average than females
 
@@ -526,7 +530,7 @@ visualise(adelie_null_distribution, bins = 20) +
   shade_p_value(obs_stat = obs_diff_means, direction = "greater")
 ```
 
-## Don't change your mind
+<!-- ## Don't change your mind
 
 You *must* decide what kind of $\text{H}_{\text{a}}$ you want to test *before* you observe (or analyse) the data
 
@@ -539,7 +543,7 @@ and reject $\text{H}_{\text{0}}$, noting that males have longer bills than femal
 
 $$
 \text{H}_{\text{a}} : \hat{\mu}_{\text{Males}} - \hat{\mu}_{\text{Females}} > 0
-$$
+$$ -->
 
 ## The *p*-value of the test
 
@@ -857,7 +861,7 @@ For simple models (*t*-tests, one-way ANOVA, etc) there are relatively simple eq
 
 For more complex models, power calculations become difficult; simulation using a computer is a solution
 
-# Confidence Intervals
+<!-- # Confidence Intervals
 
 ## Confidence Intervals
 
@@ -1171,7 +1175,9 @@ Resampling methods exploit fast computation
 
 Fewer assumptions, but some assumptions remain
 
-Theoretical approaches still have their place
+Theoretical approaches still have their place -->
+
+# Test results & Thomas Bayes
 
 ## How good are diagnostic tests?
 
@@ -1330,6 +1336,8 @@ flowchart LR
 . . .
 
 Shows the harm screening can cause if underlying risk is low
+
+# Evidence based medicine
 
 ## Evidence based medicine
 
